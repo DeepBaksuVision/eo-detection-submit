@@ -28,9 +28,117 @@ SCRDet은 작은 객체를 잘 탐지하기 위해서 장애가되는 "불충분
 
 ### 데이터 분석
 
-- Martin 작성
+Box Scale, Rotation Angle, Aspect Ratio 분석을 통해 앵커 최적화 작업 및 학습을 위한 데이터셋을 만들기 위해서 위성 영상 데이터셋의 레이블을 분석하는 작업을 진행하였다.
 
-### 데이터 전처리
+레이블은 `*.json`으로 구성되어있으며 내부 구조는 아래와 같다.
+
+```
+{
+    "features": [
+        {
+            "geometry": {
+                "coordinates": [
+                    [
+                        [
+                            -72.094811,
+                            41.347997,
+                            0.0
+                        ],
+                        [
+                            -72.094705,
+                            41.34803,
+                            0.0
+                        ],
+                        [
+                            -72.094611,
+                            41.347726,
+                            0.0
+                        ],
+                        [
+                            -72.094717,
+                            41.347693,
+                            0.0
+                        ]
+                    ]
+                ],
+                "type": "Polygon"
+            },
+            "properties": {
+                "bounds_imcoords": "2901.645703982593,41.22133429754296,2931.0626201838254,32.159790660903546,2957.0596982980583,116.55533065158266,2927.642782096826,125.61687428822208",
+                "edited_by": "Ilwon Lee @ SI Analytics",
+                "feature_id": [
+                    "3cd627bc8bb5856948f4a00622666c7d12317af10765408b3b7bc51cfcfe912b"
+                ],
+                "image_id": "0.png",
+                "ingest_time": "2019:01:14 20:40:13",
+                "type_id": 4,
+                "type_name": "maritime vessels"
+            },
+            "type": "Feature"
+        },
+        ...
+    ]
+}
+```
+
+- `geometry` : 해당 영상의 위경도 좌표
+- `properties` : 객체 정보
+  - `bounds_imcoords`: 객체 박스의 4개 꼭지점(point1~4)
+  - `image_id`: 이미지 파일 이름
+  - `type_id`: 클래스 인덱스 정보
+  - `type_name`: 클래스 이름
+
+
+
+**각도 정보 추출**
+
+주어진 레이블을 이용하여 데이터셋을 학습시키기 위해서는 어떤 모델 컨셉을 사용하냐에 따라 접근법이 크게 틀려질 수 있다. 만약 keypoint detection 방식의 접근방법을 사용한다면 레이블에 명시되어있는 `bounds_imcoords`를 사용해도 되었으나 본 팀은 일반적인 rotated box detector를 학습시키는것이 목적이었기 때문에 이를 `[cx, cy, width, height, angle or theta]`로 데이터 변환작업을 진행했다. 
+
+레이블에는 객체의 명확한 회전정보를 주지 않았기 때문에 points 정보를 활용하여 회전정보를 추출해야했다. 분석 결과 객체의 point 정보는 Clock wise로 구성되어있었다. 몇몇 데이터는 Count Clock wise로 구성되어있는 경우도 있어 Count Clock wise로 구성된 데이터는 Clock wise로 변환한 다음에 수평선의 벡터(0, 1)과 (point4, point1)벡터의  각도를 통해서 theta값을 추출했다.
+
+
+
+- 그림 넣기
+
+
+
+**공통 인터페이스 기반의 분석 도구**
+
+추출된 각도정보를 통해서 `[cx, cy, width, height, theta]`정보를 획득할 수 있었으며, 이를 기반으로 공통 어노테이션 인터페이스를 구현하였다. 해당 인터페이스를 통해 `데이터 로더`, `시각화 도구`, `분석 도구`가 접근하여 활용할 수 있게 설계되었다.
+
+설계에 대한 클래스 다이어그램은 아래와 같다.
+
+![Class Diagram](images/interface_class_diagram.png)
+
+
+
+**Rotation Angle, Aspect Ratio, Scale, Class 분포**
+
+구현된 분석도구를 통해 Rotation Angle, Aspect Ratio, Scale, Class 분포를 확인하였다.
+
+쌍곡선은 Aspect Ratio를 의미하여 직선은 Scale의 분포를 의미한다. 이를 활용하여 각 클래스별, 통합 Aspect Ratio와 Scale값을 추출하였다. 이렇게 추출된 값은 추후 모델의 configuration에 적용하여 모델을 학습하고 추론하는데 활용하였다.
+
+![box distribution](images/box_distribution.png)
+
+
+
+회전 정보는 theta값을 angle값으로 변환하여 확인하였으며 0~180도까지 상대적으로 균일하게 분포한 것을 확인하여 별도의 최적화 작업을 진행하지 않았다.
+
+![Theta Distribution](images/theta_distribution.png)
+
+
+
+클래스 분포를 확인한 결과 maritime vessels, container, oil tanker, aircraft carrier 순으로 불균형을 확인할 수 있었다. 압도적으로 적은 aircraft carrier로 인하여 통합 모델에서는 학습이 안될 것을 우려하였고 추후 상대적으로 aircraft carrier가 매우 낮은 confidence값을 갖는다는 것이 확인되어 별도 모델로 분리하게 되었다.
+
+또한 해당 분석은 최종적으로 제출될 submit file을 정렬할 때, 클래스 불균형 문제로 container, oil tanker, aircraft 순으로 정렬하고 마지막에 maritime vessels를 정렬하는 전략에 영향을 주었다.
+
+
+
+![Class Distribution](images/class_distribution.png)
+
+
+
+### 데이터 전처리(스나이퍼)
 
 - ??
 
