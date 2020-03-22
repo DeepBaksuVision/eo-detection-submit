@@ -30,13 +30,118 @@ SCRDet은 작은 객체를 잘 탐지하기 위해서 장애가되는 "불충분
 
 - Martin 작성
 
-### 데이터 전처리
 
-- ??
 
-### 데이터 어그멘테이션
+### Detectron2 with Rotated bbox
 
-- 류원탁 작성
+#### 개요
+[Detectron2](https://github.com/facebookresearch/detectron2)는 Facebook AI Research조직에서 만든 오픈소스 프로젝트로 detection을 포함한 SOTA 알고리즘을 구현한 프로젝트이다. 64명의 direct contributor와 약 27,000명의 contributor로 구성되어 있는만큼 매우 매력적인 프로젝트라고 할 수 있다.
+
+Detectron2를 사용하면서 기대효과는 다음과 같다.
+
+- 위성영상 인식 문제를 해결함에 있어서 다양한 해결방법을 낮은 비용으로 적용할 수 있는 점.
+- 공신력있는 기관에서 검증한 견고한 알고리즘
+- 유지보수 측면
+
+특히, 대회를 넘어서 인공위성영상 인식 과제는 국가안보에 밀접한 연관이 있을 수 있다고 판단하였다. 또한 객체검출과제에 필요한 개발과정은 상대적으로 복잡한 편이며, 많은 오픈소스들이 다양한 상황에서의 검증은 이루어지지 않았다고 판단했다. 이런 문제의식을 바탕으로 검증된 오픈소스를 활용하고자 하였다.
+
+detectron2는 rotated bbox에 대한 공식적인 지원은 하지 않고 있습니다. 따라서 rotated bbox를 처리하기 위한 파이프라인을 구성해야 합니다.
+
+#### 데이터 전처리
+
+horizontal bbox와 다르게 rotated bbox는 transforms.apply_rotated_box를 적용해야한다. 이는 두 박스간의 연산이 근본적으로 다르기 때문에 detectron2의 내부에서 독립적으로 구현해놓은 상태이다.
+
+```python
+def transform_instance_annotations(annotation, transforms, image_size):
+    bbox = np.asarray([annotation["bbox"]])
+    annotation["bbox"] = transforms.apply_rotated_box(bbox)[0]
+    annotation["bbox_mode"] = BoxMode.XYWHA_ABS
+    return annotation
+```
+
+
+#### 데이터 어그멘테이션
+
+[imgaug](https://imgaug.readthedocs.io/en/latest/index.html)를 활용하여 적용하였다.. 중요한 점은 rotated bbox를 구성하는 4개의 점을 key point라고 해석하여, augmentation을 image와 rbox에 모두 적용하였다.
+
+
+
+**1. bbox2keypoint**
+
+아래는 annotation(bbox)를 keypoint로 변환하는 과정 중 일부이다. 
+
+```python
+    def _get_keypoints(self, annos, shape):
+        """
+        Args:
+        annos (dict)
+        shape (np.ndarray)
+
+        Returns:
+        keypoints (imgaug.augmentables.KeypointsOnImage)
+        """
+        kps, points = [], []
+        for anno in annos:
+            bbox = self._bbox_cvt1(*anno["bbox"])  
+            horizon_bbox_points = self.rb_cvt.bbox_to_points(
+            np.array(bbox[:4]))
+            rotated_bbox_points = self.rb_cvt.rotate_horizon_bbox_with_theta(
+            horizon_bbox_points, bbox[-1]
+            )  # radian
+            p1 = tuple(rotated_bbox_points[0][:-1])
+            p2 = tuple(rotated_bbox_points[1][:-1])
+            p3 = tuple(rotated_bbox_points[2][:-1])
+            p4 = tuple(rotated_bbox_points[3][:-1])
+            points += [p1, p2, p3, p4]
+            kps = KeypointsOnImage([Keypoint(x=p[0], y=p[1])
+                                    for p in points], shape=shape)
+            assert len(kps) % 4 == 0, "Wrong keypoints"
+        return kps
+```
+
+**2. augmentation**
+
+위의 과정에서 얻은 keypoint를 augmentation 함수에 넣어준다.
+
+```python
+image, kps = self.augmentation(image=image, keypoints=kps)
+```
+
+**3. keypoint2annotation**
+
+아래의 과정은 keypoint를 다시 annotation 형태로 바꿔주는 함수이다. 주의 할 점은 p1, p2, p3, p4의 순서가 유지되어야 한다는 점이다.
+
+```python
+	def _get_rbox(self, kps):
+        """
+        Args:
+            kps (imgaug.augmentables.KeypointsOnImage)
+
+        Returns
+            rboxes (List of [center_x, center_y, bbox_width, bbox_height, theta(degree)])
+        """
+        stack, rboxes = [], []
+        for i in range(len(kps)):
+            stack.append([kps[i].x, kps[i].y, 1])
+            if len(stack) == 4:
+                p1, p2, p3, p4 = stack
+                while p1[0] != np.min([p1[0], p2[0], p3[0], p4[0]]):
+                    p1, p2, p3, p4 = p2, p3, p4, p1
+                [xmin, ymin, xmax, ymax], theta = self.rb_cvt.get_rotated_bbox(
+                    np.array([p1, p2, p3, p4])
+                )
+                rbox = self._bbox_cvt2(xmin, ymin, xmax, ymax, theta)
+                rboxes.append(rbox)
+                stack = []
+        assert not stack, "stack {}".format(stack)
+        return rboxes
+```
+
+
+
+
+
+
 
 ### 모델
 
