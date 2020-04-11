@@ -154,17 +154,30 @@ image, kps = self.augmentation(image=image, keypoints=kps)
 ### 실험
 
 - 실험은 학습과 마찬가지로 전체 클래스를 인퍼런스하는 것과 항공모함 클래스만 별도로 인퍼런스하였다. 
-  우리가 실험에 사용한 하이퍼 파라미터는 다음과 같다.
-  score_threshold	
+
+  실험에 사용한 하이퍼 파라미터는 다음과 같다.
   - batch_size	
-  - scale	
+  - scale
   - stride	
   - chip_size	
   - clip_sizes	
   - edge_clip	
   - nms_threshold
-
+  
+  batch size는 가용자산에 맞추어 25로 설정하였다.
+  scale은 Sniper 적용시 사용한 스케일링 비율이다.
+  stride는 128, 256, 800, 1000 등으로 실험하였는데 stride가 작을수록 결과가 좋은 것을 확인하였다. 하지만 값이 작을수록 인퍼런스 시간이 오래걸리는 trade off가 있다.
+  
+실험 환경
  
+|GPU|ea|
+|2080Ti|6ea|
+|1080Ti|?ea|
+
+|batch_size|stride|nms_threshold|
+|------|---|---|
+|25|128|0.1|
+
   
 
 ## 결론
