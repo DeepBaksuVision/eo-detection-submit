@@ -168,7 +168,9 @@ image, kps = self.augmentation(image=image, keypoints=kps)
   
   scale은 Sniper 적용시 사용한 스케일링 비율이다.
 
-  stride는 128, 256, 700 등으로 실험하였는데 stride가 작을수록 결과가 좋은 것을 확인하였다. 하지만 값이 작을수록 인퍼런스 시간이 오래걸리는 trade off가 있다.
+  stride는 128, 256, 700 등으로 실험하였는데 stride가 작을수록 결과가 좋은 것을 확인하였다. 
+  
+  하지만 값이 작을수록 인퍼런스 시간이 오래걸리는 trade off가 있다.
   
 ##### Experiment settings
  
