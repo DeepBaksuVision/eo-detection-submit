@@ -153,16 +153,21 @@ image, kps = self.augmentation(image=image, keypoints=kps)
 
 ### 실험
 
-- Martin 작성
+- 실험은 학습과 마찬가지로 전체 클래스를 인퍼런스하는 것과 항공모함 클래스만 별도로 인퍼런스하였다. 
+  우리가 실험에 사용한 하이퍼 파라미터는 다음과 같다.
+  score_threshold	
+  - batch_size	
+  - scale	
+  - stride	
+  - chip_size	
+  - clip_sizes	
+  - edge_clip	
+  - nms_threshold
+
+ 
+  
 
 ## 결론
 
 - ??
 
-## Ablation Study
-
-- ??
-
-## Reference
-
-- ??
