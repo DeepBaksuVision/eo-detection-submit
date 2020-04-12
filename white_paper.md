@@ -28,7 +28,74 @@ SCRDet은 작은 객체를 잘 탐지하기 위해서 장애가되는 "불충분
 
 ### 데이터 분석
 
-- Martin 작성
+#### 1. class 분포
+
+<img src="./images/count_class.png" width="70%">
+
+
+
+클레스 불균형 문제를 가지고 있다. 추후에 언급하겠지만, 클레스 불균형 문제를 대처하는 것은 이번 대회에 주요한 목표 중 하나다.
+
+
+
+#### 2.  Width Height 분포
+
+<img src="./images/scatter.png" width="100%">
+
+위의 이미지는 각 객체마다 height와 width의 정보를 scatter plot을 그린 것이다. 클레스마다 약간의 차이를 보이는데요. 아래의 이미지에서 자세히 알아보도록 하겠다.
+
+
+
+#### 3. Aspect Ratio(종횡비) 분포
+
+**maritaime vessels aspect ratio**
+
+<img src="./images/maritime_vessels_aspect_ratio.png" width="70%">
+
+**container aspect ratio**
+
+<img src="./images/container_aspect_ratio.png" width="70%">
+
+**oil tanker aspect ratio**
+
+<img src="./images/oil_tanker_aspect_ratio.png" width="70%">
+
+**aircraft aspect ratio**
+
+<img src="./images/aircraft_aspect_ratio.png" width="70%">
+
+
+
+#### 4. Scale 분포
+
+**maritaime vessels  scale**
+
+<img src="./images/maritime_vessels_scale.png" width="70%">
+
+**container scale**
+
+<img src="./images/container_scale.png" width="70%">
+
+**oil tanker scale**
+
+<img src="./images/oil_tanker_scale.png" width="70%">
+
+**aircraft scale**
+
+<img src="./images/aircraft_scale.png" width="70%">
+
+
+
+결론적으로,  이 대회가 풀고자하는 문제들을 다음과 같이 정의하였습니다.
+
+- 클레스 불균형 문제를 어떻게 해결할 것인가?
+- 클레스 별 aspect ratio분포, scale의 분포들을 바탕으로 Anchor를 어떤 식으로 설정할 것인가?
+- 앙상블 모델을 사용한다면, 어떤 class를 분리시키고, 어떤 class를 함께 학습시킬 것인가? 
+
+여러가지 시도를 하였지만, 결론적으로 aircraft는 수도 적고 다른 클레스와 연관성이 없다고 판단해서 분리하여 학습을 진행하였다.
+
+
+
 
 
 
@@ -141,28 +208,172 @@ image, kps = self.augmentation(image=image, keypoints=kps)
 
 
 
+## Experiment
+
+실험은 학습과 마찬가지로 전체 클래스를 인퍼런스하는 것과 항공모함 클래스만 별도로 인퍼런스하였다. 
+
+실험에 사용한 하이퍼 파라미터는 다음과 같다.
+
+- batch_size: 한 train_step 혹은 validation_step마다 모델에 입력되는 데이터의 수
+- scale: Sniper 적용시 사용한 스케일링 비율, 해상도
+- stride: Sniper 적용시, window가 움직이는 단위
+- chip_size: 사용하지 않음
+- clip_sizes: 사용하지 않음
+- edge_clip: 사용하지 않음	
+- nms_threshold: nms가 적용되는 iou 점수 기준
 
 
-### 모델
+stride는 128, 256, 700 등으로 실험하였는데 stride가 작을수록 결과가 향상된 것을 확인하였다. 하지만, inference 시간이 늘어나는  trade-off가 있다.
 
-- ??
 
-### 학습
+ ### Experiment settings
 
-- ??
+**Resources**
 
-### 실험
+| GPU    | ea   |
+| ------ | ---- |
+| 2080Ti | 6ea  |
+| 1080Ti | 8ea  |
 
-- Martin 작성
+  **best inference settings**
 
-## 결론
+| score | batch_size | scale            | stride | nms_threshold |
+| ----- | ---------- | ---------------- | ------ | ------------- |
+| 0.76  | 25         | 1500, 3000, 6000 | 128    | 0.1           |
 
-- ??
 
-## Ablation Study
 
-- ??
+## External Study
+
+### mAP 산출
+
+이번 데이콘 공모전을 진행하면서 제출횟수가 제한되있다는 한계때문에 모든 결과를 확인하는데는 시간적 비용이 많이 소모된다. 제한적인 환경을 극복하고자 mAP를 확인할 방법을 모색했다.
+
+* mAP는 기존의 Bounding box와 다른 좌표계를 가지고 있다. 좌표는 다음과 같다.
+
+> 기존의 bbox의 좌표계 : [xmin, ymin, xmax, ymax]   
+> Rotated bbox의 좌표계 : [cx, cy, width, height, theta]  
+> iou 산출 방법, animation drawing 방법 다름  
+
+좌표계가 다르기 때문에 일반적인 Bounding box mAP repository에서  몇 가지 수정을 한 Rotate Box mAP레포를 사용했다. 레포 주소는 다음과 같다.
+
+[GitHub - chromatices/Rotate_box_mAP](https://github.com/chromatices/Rotate_box_mAP.git)
+
+#### Data converting
+결과로 나온 csv파일과 데이터 원본에 있던 json 파일을 txt로 변환해야 mAP 모듈을 돌릴 수 있다. 따라서 결과물로 나오는 csv와 ground-truth에 해당하는 json을 txt로 변환해야한다. csv와 json을 txt로 변환해주는 코드는 다음위치에 있다. 
+
+```
+/root/Documents/EO-Detection/reproducting/utils/data/file_converter/csv_to_txt.py
+
+/root/Documents/EO-Detection/reproducting/utils/data/file_converter/json_to_txt.py
+```
+
+#### Rotated Bounding Box mAP
+코드 실행은 다음과 같다.
+
+1. Repository download
+```
+$ git clone https://github.com/chromatices/Rotate_box_mAP.git
+$ cd ~/Rotated_box_mAP/mAP
+```
+
+2. Data entry
+> Input 폴더에 세 가지 하위폴더가 존재한다. 해당 목적에 맞게 파일을 넣으면 된다. 디렉토리 구조는 다음과 같다.  
+```
+root
+`-- Rotated_box_mAP
+    |-- mAP
+    	|-- input
+			|-- ground-truth
+			|-- detection-results
+			|-- images-optional
+```
+
+> 각 폴더에 해당하는 파일들은 다음과 같다  
+```
+ground-truth : test json file annotation bbox coordinates
+detection-results : result csv annotation bbox coordinates
+images-optional : option of animatior
+```
+
+> 각 폴더에 들어갈 자료형태는 다음과 같다.  
+```
+ground-truth : 001.txt
+detection-results : 001.txt
+images-optional : 001.jpg
+```
+
+> 파일 내부는 다음과 같다.  
+```
+ground-truth/001.txt
+
+<class> <cx> <cy> <width> <height> <theta>
+
+detection-results/001.txt
+
+<class> <confidence-score> <cx> <cy> <width> <height> <theta>
+
+```
+
+> 세 폴더의 파일 개수가 전부 동일해야 돌아가며, 좌표계에 문제가 생길경우에도 에러를 방출한다. 단, images-optinal 폴더는 필수 폴더가 아니기 때문에 폴더가 없거나 폴더가 비워져있어도 프로그램이 정상적으로 실행된다.  
+
+3. Running Rotated mAP
+
+> 파일을 정상적으로 입력했다면 터미널로 가서 코드를 실행한다. gpu 연산이 필요한 경우에는 cython 파일 구동을 위해 다음 코드를 입력해서 빌드를 해야한다.  
+```
+python setup.py build_ext --inplace
+```
+
+> 정상적으로 빌드가 됐다면 다음 실행코드를 입력한다.  
+
+```
+$ python3 main.py
+```
+
+> 만약 gpu가 없다면 iou_rotate.py내부를 수정하고 코드를 돌려야 한다.  
+다음과 같이 수정한다.
+
+```
+#from rbbox_overlaps import rbbx_overlaps
+
+
+
+def iou_rotate_calculate(boxes1, boxes2, use_gpu=True, gpu_id=0):
+
+
+
+    # start = time.time()
+
+    if use_gpu:
+        #ious = rbbx_overlaps(boxes1, boxes2, gpu_id)
+		  pass
+```
+
+> Animator를 출력하지 않고 mAP 결과만 보고싶다면 다음과 같이 실행한다.  
+> 이는 gpu,cpu와 상관없이 해당되므로 -na 만 추가하면 된다.  
+```
+$python3 main.py -na
+```
+
+
+### External Labeling
+
+#### Hyper minimal scale object labeling
+
+기존의 이미지에서 작은 선박들이 레이블링 되어있지 않은 것을 확인한 후, 이를 레이블링하여 학습을 진행했다. 이미지 라벨링은 다음의 툴을 사용했다.
+[GitHub - cgvict/roLabelImg: Label Rotated Rect On Images for training](https://github.com/cgvict/roLabelImg)
+
+웹 기반이 아닌 로컬 프로그램으로, OS와 상관없이 실행 가능한 프로그램이다. 아래는 라벨링 과정을 스크릿샷으로 남긴 것이다.
+![KakaoTalk_Photo_2020-04-11-21-39-44](https://user-images.githubusercontent.com/56014940/79043887-065f9c80-7c3d-11ea-9255-e407238b592d.png)
+
+학습 전후로 큰 변화가 없는것을 확인했다. 데이콘에서 제공하는 데이터의 라벨에 대한 샘플링과 다르기 때문에 큰 성능향상이 없었다고 추정한다.
+
+
 
 ## Reference
 
-- ??
+- [detectron2](https://github.com/facebookresearch/detectron2)
+- [snifer](https://arxiv.org/pdf/1805.09300.pdf)
+- [imgaug](https://imgaug.readthedocs.io/en/latest/source/api_augmenters_geometric.html)
+- [roLabelImg: Label Rotated Rect On Images for training](https://github.com/cgvict/roLabelImg)
+
