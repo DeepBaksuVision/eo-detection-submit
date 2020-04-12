@@ -170,18 +170,19 @@ image, kps = self.augmentation(image=image, keypoints=kps)
 
   stride는 128, 256, 700 등으로 실험하였는데 stride가 작을수록 결과가 좋은 것을 확인하였다. 
   
-  하지만 값이 작을수록 인퍼런스 시간이 오래걸리는 trade off가 있다.
+  하지만 값이 작을수록 인퍼런스 시간이 오래걸리는 trade off가 있다.(128 기준 19시간, 256 기준 9시간)
   
-##### Experiment settings
+#### Experiment settings
  
 |GPU|ea|
 |------|---|
 |2080Ti|6ea|
-|1080Ti|?ea|
+|1080Ti|2ea|
+|p40|1ea|
 
-|score|batch_size|scale|stride|nms_threshold|
-|-----|----------|-----|------|-------------|
-|0.76|25|1500, 3000, 6000|128|0.1|
+|score|batch_size|scale|stride|chip_size|clip_sizes|nms_threshold|
+|-----|----------|-----|------|---------|----------|-------------|
+|0.76|20|1500, 3000, 6000|256|800|0,15000,10000,90000,80000,640000|0.1|
 
 ## 결론
 
