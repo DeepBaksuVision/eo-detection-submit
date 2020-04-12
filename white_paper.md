@@ -26,146 +26,354 @@ SCRDet은 작은 객체를 잘 탐지하기 위해서 장애가되는 "불충분
 
 ## 방법론
 
-### 데이터 분석
-
-Box Scale, Rotation Angle, Aspect Ratio 분석을 통해 앵커 최적화 작업 및 학습을 위한 데이터셋을 만들기 위해서 위성 영상 데이터셋의 레이블을 분석하는 작업을 진행하였다.
-
-레이블은 `*.json`으로 구성되어있으며 내부 구조는 아래와 같다.
-
-```
-{
-    "features": [
-        {
-            "geometry": {
-                "coordinates": [
-                    [
-                        [
-                            -72.094811,
-                            41.347997,
-                            0.0
-                        ],
-                        [
-                            -72.094705,
-                            41.34803,
-                            0.0
-                        ],
-                        [
-                            -72.094611,
-                            41.347726,
-                            0.0
-                        ],
-                        [
-                            -72.094717,
-                            41.347693,
-                            0.0
-                        ]
-                    ]
-                ],
-                "type": "Polygon"
-            },
-            "properties": {
-                "bounds_imcoords": "2901.645703982593,41.22133429754296,2931.0626201838254,32.159790660903546,2957.0596982980583,116.55533065158266,2927.642782096826,125.61687428822208",
-                "edited_by": "Ilwon Lee @ SI Analytics",
-                "feature_id": [
-                    "3cd627bc8bb5856948f4a00622666c7d12317af10765408b3b7bc51cfcfe912b"
-                ],
-                "image_id": "0.png",
-                "ingest_time": "2019:01:14 20:40:13",
-                "type_id": 4,
-                "type_name": "maritime vessels"
-            },
-            "type": "Feature"
-        },
-        ...
-    ]
-}
-```
-
-- `geometry` : 해당 영상의 위경도 좌표
-- `properties` : 객체 정보
-  - `bounds_imcoords`: 객체 박스의 4개 꼭지점(point1~4)
-  - `image_id`: 이미지 파일 이름
-  - `type_id`: 클래스 인덱스 정보
-  - `type_name`: 클래스 이름
-
-
-
-**각도 정보 추출**
-
-주어진 레이블을 이용하여 데이터셋을 학습시키기 위해서는 어떤 모델 컨셉을 사용하냐에 따라 접근법이 크게 틀려질 수 있다. 만약 keypoint detection 방식의 접근방법을 사용한다면 레이블에 명시되어있는 `bounds_imcoords`를 사용해도 되었으나 본 팀은 일반적인 rotated box detector를 학습시키는것이 목적이었기 때문에 이를 `[cx, cy, width, height, angle or theta]`로 데이터 변환작업을 진행했다. 
-
-레이블에는 객체의 명확한 회전정보를 주지 않았기 때문에 points 정보를 활용하여 회전정보를 추출해야했다. 분석 결과 객체의 point 정보는 Clock wise로 구성되어있었다. 몇몇 데이터는 Count Clock wise로 구성되어있는 경우도 있어 Count Clock wise로 구성된 데이터는 Clock wise로 변환한 다음에 수평선의 벡터(0, 1)과 (point4, point1)벡터의  각도를 통해서 theta값을 추출했다.
-
-
-
-- 그림 넣기
-
-
-
-**공통 인터페이스 기반의 분석 도구**
-
-추출된 각도정보를 통해서 `[cx, cy, width, height, theta]`정보를 획득할 수 있었으며, 이를 기반으로 공통 어노테이션 인터페이스를 구현하였다. 해당 인터페이스를 통해 `데이터 로더`, `시각화 도구`, `분석 도구`가 접근하여 활용할 수 있게 설계되었다.
-
-설계에 대한 클래스 다이어그램은 아래와 같다.
-
-![Class Diagram](images/interface_class_diagram.png)
-
-
-
-**Rotation Angle, Aspect Ratio, Scale, Class 분포**
-
-구현된 분석도구를 통해 Rotation Angle, Aspect Ratio, Scale, Class 분포를 확인하였다.
-
-쌍곡선은 Aspect Ratio를 의미하여 직선은 Scale의 분포를 의미한다. 이를 활용하여 각 클래스별, 통합 Aspect Ratio와 Scale값을 추출하였다. 이렇게 추출된 값은 추후 모델의 configuration에 적용하여 모델을 학습하고 추론하는데 활용하였다.
-
-![box distribution](images/box_distribution.png)
-
-
-
-회전 정보는 theta값을 angle값으로 변환하여 확인하였으며 0~180도까지 상대적으로 균일하게 분포한 것을 확인하여 별도의 최적화 작업을 진행하지 않았다.
-
-![Theta Distribution](images/theta_distribution.png)
-
-
-
-클래스 분포를 확인한 결과 maritime vessels, container, oil tanker, aircraft carrier 순으로 불균형을 확인할 수 있었다. 압도적으로 적은 aircraft carrier로 인하여 통합 모델에서는 학습이 안될 것을 우려하였고 추후 상대적으로 aircraft carrier가 매우 낮은 confidence값을 갖는다는 것이 확인되어 별도 모델로 분리하게 되었다.
-
-또한 해당 분석은 최종적으로 제출될 submit file을 정렬할 때, 클래스 불균형 문제로 container, oil tanker, aircraft 순으로 정렬하고 마지막에 maritime vessels를 정렬하는 전략에 영향을 주었다.
-
-
-
-![Class Distribution](images/class_distribution.png)
-
-
-
 ### 데이터 전처리(스나이퍼)
+=======
+#### 1. class 분포
 
-- ??
+<img src="./images/count_class.png" width="70%">
 
-### 데이터 어그멘테이션
 
-- 류원탁 작성
 
-### 모델
+클레스 불균형 문제를 가지고 있다. 추후에 언급하겠지만, 클레스 불균형 문제를 대처하는 것은 이번 대회에 주요한 목표 중 하나다.
 
-- ??
 
-### 학습
 
-- ??
+#### 2.  Width Height 분포
 
-### 실험
+<img src="./images/scatter.png" width="100%">
 
-- Martin 작성
+위의 이미지는 각 객체마다 height와 width의 정보를 scatter plot을 그린 것이다. 클레스마다 약간의 차이를 보이는데요. 아래의 이미지에서 자세히 알아보도록 하겠다.
 
-## 결론
 
-- ??
 
-## Ablation Study
+#### 3. Aspect Ratio(종횡비) 분포
 
-- ??
+**maritaime vessels aspect ratio**
+
+<img src="./images/maritime_vessels_aspect_ratio.png" width="70%">
+
+**container aspect ratio**
+
+<img src="./images/container_aspect_ratio.png" width="70%">
+
+**oil tanker aspect ratio**
+
+<img src="./images/oil_tanker_aspect_ratio.png" width="70%">
+
+**aircraft aspect ratio**
+
+<img src="./images/aircraft_aspect_ratio.png" width="70%">
+
+
+
+#### 4. Scale 분포
+
+**maritaime vessels  scale**
+
+<img src="./images/maritime_vessels_scale.png" width="70%">
+
+**container scale**
+
+<img src="./images/container_scale.png" width="70%">
+
+**oil tanker scale**
+
+<img src="./images/oil_tanker_scale.png" width="70%">
+
+**aircraft scale**
+
+<img src="./images/aircraft_scale.png" width="70%">
+
+
+
+결론적으로,  이 대회가 풀고자하는 문제들을 다음과 같이 정의하였습니다.
+
+- 클레스 불균형 문제를 어떻게 해결할 것인가?
+- 클레스 별 aspect ratio분포, scale의 분포들을 바탕으로 Anchor를 어떤 식으로 설정할 것인가?
+- 앙상블 모델을 사용한다면, 어떤 class를 분리시키고, 어떤 class를 함께 학습시킬 것인가? 
+
+여러가지 시도를 하였지만, 결론적으로 aircraft는 수도 적고 다른 클레스와 연관성이 없다고 판단해서 분리하여 학습을 진행하였다.
+
+
+
+
+
+
+### Detectron2 with Rotated bbox
+
+#### 개요
+[Detectron2](https://github.com/facebookresearch/detectron2)는 Facebook AI Research조직에서 만든 오픈소스 프로젝트로 detection을 포함한 SOTA 알고리즘을 구현한 프로젝트이다. 64명의 direct contributor와 약 27,000명의 contributor로 구성되어 있는만큼 매우 매력적인 프로젝트라고 할 수 있다.
+
+Detectron2를 사용하면서 기대효과는 다음과 같다.
+
+- 위성영상 인식 문제를 해결함에 있어서 다양한 해결방법을 낮은 비용으로 적용할 수 있는 점.
+- 공신력있는 기관에서 검증한 견고한 알고리즘
+- 유지보수 측면
+
+특히, 대회를 넘어서 인공위성영상 인식 과제는 국가안보에 밀접한 연관이 있을 수 있다고 판단하였다. 또한 객체검출과제에 필요한 개발과정은 상대적으로 복잡한 편이며, 많은 오픈소스들이 다양한 상황에서의 검증은 이루어지지 않았다고 판단했다. 이런 문제의식을 바탕으로 검증된 오픈소스를 활용하고자 하였다.
+
+detectron2는 rotated bbox에 대한 공식적인 지원은 하지 않고 있습니다. 따라서 rotated bbox를 처리하기 위한 파이프라인을 구성해야 합니다.
+
+#### 데이터 전처리
+
+horizontal bbox와 다르게 rotated bbox는 transforms.apply_rotated_box를 적용해야한다. 이는 두 박스간의 연산이 근본적으로 다르기 때문에 detectron2의 내부에서 독립적으로 구현해놓은 상태이다.
+
+```python
+def transform_instance_annotations(annotation, transforms, image_size):
+    bbox = np.asarray([annotation["bbox"]])
+    annotation["bbox"] = transforms.apply_rotated_box(bbox)[0]
+    annotation["bbox_mode"] = BoxMode.XYWHA_ABS
+    return annotation
+```
+
+
+#### 데이터 어그멘테이션
+
+[imgaug](https://imgaug.readthedocs.io/en/latest/index.html)를 활용하여 적용하였다.. 중요한 점은 rotated bbox를 구성하는 4개의 점을 key point라고 해석하여, augmentation을 image와 rbox에 모두 적용하였다.
+
+
+
+**1. bbox2keypoint**
+
+아래는 annotation(bbox)를 keypoint로 변환하는 과정 중 일부이다. 
+
+```python
+    def _get_keypoints(self, annos, shape):
+        """
+        Args:
+        annos (dict)
+        shape (np.ndarray)
+
+        Returns:
+        keypoints (imgaug.augmentables.KeypointsOnImage)
+        """
+        kps, points = [], []
+        for anno in annos:
+            bbox = self._bbox_cvt1(*anno["bbox"])  
+            horizon_bbox_points = self.rb_cvt.bbox_to_points(
+            np.array(bbox[:4]))
+            rotated_bbox_points = self.rb_cvt.rotate_horizon_bbox_with_theta(
+            horizon_bbox_points, bbox[-1]
+            )  # radian
+            p1 = tuple(rotated_bbox_points[0][:-1])
+            p2 = tuple(rotated_bbox_points[1][:-1])
+            p3 = tuple(rotated_bbox_points[2][:-1])
+            p4 = tuple(rotated_bbox_points[3][:-1])
+            points += [p1, p2, p3, p4]
+            kps = KeypointsOnImage([Keypoint(x=p[0], y=p[1])
+                                    for p in points], shape=shape)
+            assert len(kps) % 4 == 0, "Wrong keypoints"
+        return kps
+```
+
+**2. augmentation**
+
+위의 과정에서 얻은 keypoint를 augmentation 함수에 넣어준다.
+
+```python
+image, kps = self.augmentation(image=image, keypoints=kps)
+```
+
+**3. keypoint2annotation**
+
+아래의 과정은 keypoint를 다시 annotation 형태로 바꿔주는 함수이다. 주의 할 점은 p1, p2, p3, p4의 순서가 유지되어야 한다는 점이다.
+
+```python
+	def _get_rbox(self, kps):
+        """
+        Args:
+            kps (imgaug.augmentables.KeypointsOnImage)
+
+        Returns
+            rboxes (List of [center_x, center_y, bbox_width, bbox_height, theta(degree)])
+        """
+        stack, rboxes = [], []
+        for i in range(len(kps)):
+            stack.append([kps[i].x, kps[i].y, 1])
+            if len(stack) == 4:
+                p1, p2, p3, p4 = stack
+                while p1[0] != np.min([p1[0], p2[0], p3[0], p4[0]]):
+                    p1, p2, p3, p4 = p2, p3, p4, p1
+                [xmin, ymin, xmax, ymax], theta = self.rb_cvt.get_rotated_bbox(
+                    np.array([p1, p2, p3, p4])
+                )
+                rbox = self._bbox_cvt2(xmin, ymin, xmax, ymax, theta)
+                rboxes.append(rbox)
+                stack = []
+        assert not stack, "stack {}".format(stack)
+        return rboxes
+```
+
+
+
+
+
+## Experiment
+
+실험은 학습과 마찬가지로 전체 클래스를 인퍼런스하는 것과 항공모함 클래스만 별도로 인퍼런스하였다. 
+
+실험에 사용한 하이퍼 파라미터는 다음과 같다.
+
+- batch_size: 한 train_step 혹은 validation_step마다 모델에 입력되는 데이터의 수
+- scale: Sniper 적용시 사용한 스케일링 비율, 해상도
+- stride: Sniper 적용시, window가 움직이는 단위
+- chip_size: 사용하지 않음
+- clip_sizes: 사용하지 않음
+- edge_clip: 사용하지 않음	
+- nms_threshold: nms가 적용되는 iou 점수 기준
+
+
+stride는 128, 256, 700 등으로 실험하였는데 stride가 작을수록 결과가 향상된 것을 확인하였다. 하지만, inference 시간이 늘어나는  trade-off가 있다.
+
+
+ ### Experiment settings
+
+**Resources**
+
+| GPU    | ea   |
+| ------ | ---- |
+| 2080Ti | 6ea  |
+| 1080Ti | 8ea  |
+
+  **best inference settings**
+
+| score | batch_size | scale            | stride | nms_threshold |
+| ----- | ---------- | ---------------- | ------ | ------------- |
+| 0.76  | 25         | 1500, 3000, 6000 | 128    | 0.1           |
+
+
+
+## External Study
+
+### mAP 산출
+
+이번 데이콘 공모전을 진행하면서 제출횟수가 제한되있다는 한계때문에 모든 결과를 확인하는데는 시간적 비용이 많이 소모된다. 제한적인 환경을 극복하고자 mAP를 확인할 방법을 모색했다.
+
+* mAP는 기존의 Bounding box와 다른 좌표계를 가지고 있다. 좌표는 다음과 같다.
+
+> 기존의 bbox의 좌표계 : [xmin, ymin, xmax, ymax]   
+> Rotated bbox의 좌표계 : [cx, cy, width, height, theta]  
+> iou 산출 방법, animation drawing 방법 다름  
+
+좌표계가 다르기 때문에 일반적인 Bounding box mAP repository에서  몇 가지 수정을 한 Rotate Box mAP레포를 사용했다. 레포 주소는 다음과 같다.
+
+[GitHub - chromatices/Rotate_box_mAP](https://github.com/chromatices/Rotate_box_mAP.git)
+
+#### Data converting
+결과로 나온 csv파일과 데이터 원본에 있던 json 파일을 txt로 변환해야 mAP 모듈을 돌릴 수 있다. 따라서 결과물로 나오는 csv와 ground-truth에 해당하는 json을 txt로 변환해야한다. csv와 json을 txt로 변환해주는 코드는 다음위치에 있다. 
+
+```
+/root/Documents/EO-Detection/reproducting/utils/data/file_converter/csv_to_txt.py
+
+/root/Documents/EO-Detection/reproducting/utils/data/file_converter/json_to_txt.py
+```
+
+#### Rotated Bounding Box mAP
+코드 실행은 다음과 같다.
+
+1. Repository download
+```
+$ git clone https://github.com/chromatices/Rotate_box_mAP.git
+$ cd ~/Rotated_box_mAP/mAP
+```
+
+2. Data entry
+> Input 폴더에 세 가지 하위폴더가 존재한다. 해당 목적에 맞게 파일을 넣으면 된다. 디렉토리 구조는 다음과 같다.  
+```
+root
+`-- Rotated_box_mAP
+    |-- mAP
+    	|-- input
+			|-- ground-truth
+			|-- detection-results
+			|-- images-optional
+```
+
+> 각 폴더에 해당하는 파일들은 다음과 같다  
+```
+ground-truth : test json file annotation bbox coordinates
+detection-results : result csv annotation bbox coordinates
+images-optional : option of animatior
+```
+
+> 각 폴더에 들어갈 자료형태는 다음과 같다.  
+```
+ground-truth : 001.txt
+detection-results : 001.txt
+images-optional : 001.jpg
+```
+
+> 파일 내부는 다음과 같다.  
+```
+ground-truth/001.txt
+
+<class> <cx> <cy> <width> <height> <theta>
+
+detection-results/001.txt
+
+<class> <confidence-score> <cx> <cy> <width> <height> <theta>
+
+```
+
+> 세 폴더의 파일 개수가 전부 동일해야 돌아가며, 좌표계에 문제가 생길경우에도 에러를 방출한다. 단, images-optinal 폴더는 필수 폴더가 아니기 때문에 폴더가 없거나 폴더가 비워져있어도 프로그램이 정상적으로 실행된다.  
+
+3. Running Rotated mAP
+
+> 파일을 정상적으로 입력했다면 터미널로 가서 코드를 실행한다. gpu 연산이 필요한 경우에는 cython 파일 구동을 위해 다음 코드를 입력해서 빌드를 해야한다.  
+```
+python setup.py build_ext --inplace
+```
+
+> 정상적으로 빌드가 됐다면 다음 실행코드를 입력한다.  
+
+```
+$ python3 main.py
+```
+
+> 만약 gpu가 없다면 iou_rotate.py내부를 수정하고 코드를 돌려야 한다.  
+다음과 같이 수정한다.
+
+```
+#from rbbox_overlaps import rbbx_overlaps
+
+
+
+def iou_rotate_calculate(boxes1, boxes2, use_gpu=True, gpu_id=0):
+
+
+
+    # start = time.time()
+
+    if use_gpu:
+        #ious = rbbx_overlaps(boxes1, boxes2, gpu_id)
+		  pass
+```
+
+> Animator를 출력하지 않고 mAP 결과만 보고싶다면 다음과 같이 실행한다.  
+> 이는 gpu,cpu와 상관없이 해당되므로 -na 만 추가하면 된다.  
+```
+$python3 main.py -na
+```
+
+
+### External Labeling
+
+#### Hyper minimal scale object labeling
+
+기존의 이미지에서 작은 선박들이 레이블링 되어있지 않은 것을 확인한 후, 이를 레이블링하여 학습을 진행했다. 이미지 라벨링은 다음의 툴을 사용했다.
+[GitHub - cgvict/roLabelImg: Label Rotated Rect On Images for training](https://github.com/cgvict/roLabelImg)
+
+웹 기반이 아닌 로컬 프로그램으로, OS와 상관없이 실행 가능한 프로그램이다. 아래는 라벨링 과정을 스크릿샷으로 남긴 것이다.
+![KakaoTalk_Photo_2020-04-11-21-39-44](https://user-images.githubusercontent.com/56014940/79043887-065f9c80-7c3d-11ea-9255-e407238b592d.png)
+
+학습 전후로 큰 변화가 없는것을 확인했다. 데이콘에서 제공하는 데이터의 라벨에 대한 샘플링과 다르기 때문에 큰 성능향상이 없었다고 추정한다.
+
+
 
 ## Reference
 
-- ??
+- [detectron2](https://github.com/facebookresearch/detectron2)
+- [snifer](https://arxiv.org/pdf/1805.09300.pdf)
+- [imgaug](https://imgaug.readthedocs.io/en/latest/source/api_augmenters_geometric.html)
+- [roLabelImg: Label Rotated Rect On Images for training](https://github.com/cgvict/roLabelImg)
+
